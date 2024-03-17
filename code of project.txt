@@ -1,0 +1,77 @@
+#!/bin/bash
+
+# Function to get CPU usage for specific cores
+get_cpu_usage() {
+    local core1=$1
+    local core2=$2
+
+    # Get CPU usage using top command
+    cpu_usage=$(top -bn1 | grep -E "Cpu\(s\)" | awk -v core1=$core1 -v core2=$core2 \
+        '{print $2 + $4}' | sed -n "$core1,$core2 p" | awk '{s+=$1} END {print s}')
+    
+    echo $cpu_usage
+}
+
+# Function to predict CPU usage using autoregression
+predict_cpu_usage() {
+    local y1=$(get_previous_cpu_usage 1)
+    local y2=$(get_previous_cpu_usage 2)
+
+    # Replace this line with your actual autoregression prediction logic
+    predicted_usage=$(echo "0.5 * $y1 + $y2" | bc)
+    echo $predicted_usage
+}
+
+# Function to toggle CPU cores based on predicted usage
+toggle_cpu_cores() {
+    local threshold=50.0
+    local predicted_usage=$(predict_cpu_usage)
+    local num_on_cores=$(nproc --all)
+
+    if (( $(echo "$predicted_usage >= $threshold" | bc -l) )); then
+        echo "High predicted CPU usage. Turning ON all CPU cores."
+        echo "$password" | sudo -S bash -c "echo 1 > /sys/devices/system/cpu/cpu*/online"
+    else
+        echo "Low predicted CPU usage. Turning OFF all CPU cores except the first one."
+        echo "$password" | sudo -S bash -c "echo 0 > /sys/devices/system/cpu/cpu{1..$(nproc --all)/online}"
+        num_on_cores=1
+    fi
+
+    echo $num_on_cores
+}
+
+# Function to calculate energy consumption
+calculate_energy_consumption() {
+    local power=$1
+    local time_interval=$2
+
+    # Replace this line with your actual power-to-energy conversion logic
+    # Here, we are using a placeholder value for demonstration purposes.
+    energy_consumption=$(echo "$power * $time_interval" | bc)
+    echo $energy_consumption
+}
+
+# Main loop
+while true; do
+    # Get CPU usage for specific cores
+    core1=0  # Replace with the desired core number
+    core2=1  # Replace with the desired core number
+    usage=$(get_cpu_usage $core1 $core2)
+    echo "CPU Usage for Core $core1 and Core $core2: $usage%"
+
+    # Toggle CPU cores based on predicted usage
+    num_on_cores=$(toggle_cpu_cores)
+
+    # Get CPU power consumption
+    power=$(mpstat 1 1 | awk '$12 ~ /[0-9.]+/ {print 1 - $12}')
+
+    # Calculate energy consumption over the interval
+    time_interval=5  # Adjust the time interval as needed
+    energy_consumption=$(calculate_energy_consumption $power $time_interval)
+
+    echo "Predicted CPU Usage: $(predict_cpu_usage)%"
+    echo "Estimated Energy Consumption: $energy_consumption joules"
+    echo "System Usage (excluding idle time): $(top -bn1 | grep -E "Cpu\(s\)" | awk '{print 100 - $8}' | cut -d'.' -f1)%"
+
+    sleep $time_interval
+done
